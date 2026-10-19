@@ -1,0 +1,11 @@
+/inspire.sh
+config/scope.yaml
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+results/
+.coverage
+.pytest_cache/

@@ -1,0 +1,7 @@
+scope:
+  include:
+    - example.com
+  exclude:
+    - private.example.com
+  # Nmap scans only addresses explicitly listed here, even if DNS resolves them.
+  include_ips: []

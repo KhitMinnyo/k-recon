@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "k-recon"
+version = "0.1.0"
+description = "A scope-aware reconnaissance framework for authorized security testing"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Khit Minnyo" }]
+dependencies = ["dnspython>=2.6", "PyYAML>=6.0"]
+
+[project.scripts]
+k-recon = "k_recon.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["k_recon*"]

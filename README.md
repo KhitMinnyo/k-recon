@@ -1,97 +1,128 @@
 # k-recon
 
-**A Modular Reconnaissance Framework for Authorized Bug Bounty Hunting**
+**A Modular Reconnaissance Framework for Authorized Security Testing**
 
-`k-recon` is a Python-based reconnaissance framework designed to organize and streamline asset discovery for authorized bug bounty programs and security assessments.
+`k-recon` is a Python 3.11+ command-line framework for organizing authorized reconnaissance. It enforces a domain allowlist before passing targets to external tools and stores every execution in an isolated run directory.
 
 ## Features
 
-- **Scope Enforcement** — Keep reconnaissance activities within defined targets.
-- **Asset Discovery** — Discover and organize target assets.
-- **DNS Resolution** — Resolve and deduplicate discovered domains.
-- **HTTP Probing** — Identify live web services.
-- **URL Collection** — Collect URLs for further analysis.
-- **Tool Integration** — Integrate with external reconnaissance tools.
-- **Structured Logging** — Track execution and errors.
-- **Reporting** — Export results in machine-readable formats.
+- Scope allowlists, excluded domains, DNS label-boundary checks, and explicit IP authorization for Nmap.
+- Independent Subfinder, Assetfinder, and Amass discovery adapters with per-provider results.
+- Concurrent DNS resolution and public-address checks before HTTP or port-scan modules.
+- DNS-pinned HTTP probing through the standard library, with ProjectDiscovery httpx available when all current addresses are explicitly authorized.
+- Optional GoWitness screenshots and historical URL collection through Waybackurls and gau.
+- Nmap port and service scans only when explicitly enabled and IPs are separately allowlisted.
+- Per-run logs, atomic artifact writes, machine-readable JSON reports, and mocked tests.
 
-> Features are being developed incrementally. Check the project status before relying on any feature.
-
-## Project Goals
-
-- Build a modular and maintainable reconnaissance workflow.
-- Enforce target scope before executing reconnaissance modules.
-- Reduce duplicate results and improve data organization.
-- Make it easy to extend the framework with new tools and modules.
-- Support repeatable and structured security assessments.
+External reconnaissance tools are optional. Missing tools are reported in the run results; unrelated modules continue when their dependencies are available. DNS resolution requires `dnspython`; YAML configuration uses PyYAML.
 
 ## Installation
 
-Clone the repository:
-
 ```bash
-git clone https://github.com/KhitMinnyo/k-recon.git
-cd k-recon
-```
-
-Create and activate a virtual environment:
-
-```bash
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
+python -m pip install .
 ```
 
-Install the project once packaging configuration is available:
+Install only the external tools needed for the modules you plan to run. `k-recon tools` reports which supported tools are available. Nmap must be installed separately and is never run unless explicitly enabled.
 
-```bash
-pip install -e .
+## Scope Configuration
+
+Copy `config/scope.example.yaml` to `config/scope.yaml` and replace the example values. The local scope file is ignored by Git.
+
+```yaml
+scope:
+  include:
+    - example.com
+  exclude:
+    - private.example.com
+  include_ips: []
 ```
+
+The target passed to `--domain` must match an included domain. Subdomains match only on DNS label boundaries: `api.example.com` is in scope, while `notexample.com` is not. `include_ips` accepts explicit IP addresses or CIDRs for Nmap; DNS results alone do not authorize an IP scan. Non-global DNS addresses are not sent to HTTP or Nmap modules.
+
+Without `--scope`, the supplied domain is the only scope root and no IP is authorized for Nmap.
 
 ## Usage
 
-The command-line interface and configuration format are under development.
+Show the CLI and optional tool status:
 
-The intended workflow is:
+```bash
+k-recon --help
+k-recon tools
+k-recon tools --json
+```
 
-1. Define the authorized target scope.
-2. Run asset discovery.
-3. Resolve and validate discovered assets.
-4. Probe live services and collect URLs.
-5. Review and export reconnaissance results.
+Run the standard passive discovery, DNS, HTTP, and historical URL workflow:
 
-Refer to the latest project documentation for supported commands and configuration options.
+```bash
+k-recon scan --domain example.com --scope config/scope.yaml --authorized
+```
 
-## Roadmap
+Choose modules explicitly. Dependencies are included automatically; for example, selecting `http` also schedules discovery and DNS:
 
-- [ ] Modular Python core
-- [ ] Scope allowlist and exclusion rules
-- [ ] Subdomain discovery integrations
-- [ ] DNS resolution and deduplication
-- [ ] HTTP probing
-- [ ] Historical URL collection
-- [ ] JSON reporting
-- [ ] Optional port scanning integration
-- [ ] Automated tests and CI
-- [ ] HTML reports
+```bash
+k-recon scan --domain example.com --scope config/scope.yaml \
+  --modules discovery,dns,http --authorized --timeout 10 --workers 8
+```
 
-## Security & Responsible Use
+Screenshots are opt-in through module selection:
 
-`k-recon` is intended for authorized security testing, bug bounty programs, and systems you have explicit permission to assess.
+```bash
+k-recon scan --domain example.com --scope config/scope.yaml \
+  --modules discovery,dns,http,screenshots --authorized
+```
 
-Always verify the program's scope and rules before running reconnaissance. Scope enforcement is a core design goal, but users should independently validate target authorization and tool behavior.
+Nmap requires both an explicit IP/CIDR in `scope.include_ips` and the opt-in flag:
 
-## Contributing
+```bash
+k-recon scan --domain example.com --scope config/scope.yaml \
+  --modules discovery,dns --enable-nmap --authorized
+```
 
-Contributions, bug reports, feature requests, and improvements are welcome.
+Nmap scans all TCP ports with service detection and can generate substantial traffic. Confirm program rules and authorization before enabling it. `--authorized` is a confirmation, not proof of permission.
 
-Please open an issue to discuss significant changes before submitting a pull request.
+## Run Artifacts
+
+Each scan creates a unique directory and does not overwrite earlier runs:
+
+```text
+results/example.com/runs/<run-id>/
+├── scope.txt
+├── subdomains/
+│   ├── subfinder.txt
+│   ├── assetfinder.txt
+│   ├── amass.txt
+│   ├── all.txt
+│   ├── resolved.txt
+│   └── alive.txt
+├── dns/records.json
+├── http/services.json
+├── screenshots/
+├── urls/
+├── scans/
+├── logs/recon.log
+└── report.json
+```
+
+The report records module state (`success`, `partial`, `failed`, or `skipped`), provider errors, and run timestamps. A missing optional tool produces a clear partial result instead of silently discarding the failure.
+
+## Safety Boundaries
+
+- Discovery output is normalized and scope-filtered before storage or downstream use.
+- HTTP modules receive only validated domains with public DNS answers. The built-in probe pins connections to the checked addresses and does not follow redirects. ProjectDiscovery httpx is used only when each current address is explicitly allowlisted; redirect following is not enabled.
+- Screenshot tools receive only validated live URLs and are an explicit module choice. Browser-driven pages can initiate additional requests; use screenshots only where program rules permit them.
+- Nmap is never selected by default. It scans only public resolved addresses explicitly allowed by `scope.include_ips`.
+- The framework does not perform exploitation, brute force, or destructive checks.
+
+## Development
+
+```bash
+PYTHONPATH=src python -m unittest discover -s tests -v
+```
+
+External commands are mocked in the unit suite. Tests do not require installed reconnaissance tools or access to target networks.
 
 ## License
 
-The project license will be specified in the repository.
-
----
-
-**Author:** [Khit Minnyo](https://github.com/KhitMinnyo)
-
-**Project:** [github.com/KhitMinnyo/k-recon](https://github.com/KhitMinnyo/k-recon)
+This project is licensed under the MIT License. See `LICENSE`.

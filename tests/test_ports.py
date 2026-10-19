@@ -34,6 +34,21 @@ class PortTests(unittest.TestCase):
             self.assertEqual(targets.read(), "8.8.8.8\n")
         self.assertEqual(result.details["targets"], 1)
 
+    def test_reports_nmap_execution_failure(self):
+        context, temporary = make_context(".")
+        self.addCleanup(temporary.cleanup)
+        context.enable_nmap = True
+        context.scope = Scope.create(["example.com"], include_ips=["8.8.8.8"])
+        context.data["dns_records"] = [{
+            "host": "example.com",
+            "safe_for_network_modules": True,
+            "public_addresses": ["8.8.8.8"],
+        }]
+        with patch("k_recon.modules.ports.run_tool", return_value=ToolRun(error="nmap is not installed", missing=True)):
+            result = ports.run(context)
+        self.assertEqual(result.state, "failed")
+        self.assertIn("not installed", result.message)
+
 
 if __name__ == "__main__":
     unittest.main()

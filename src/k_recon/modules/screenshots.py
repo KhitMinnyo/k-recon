@@ -14,6 +14,7 @@ def run(context: RunContext) -> ModuleResult:
         if service.get("status_code") is not None
         and not 300 <= int(service["status_code"]) < 400
         and context.scope.allows(str(service.get("host", "")))
+        and context.scope.allows_url(str(service["url"]))
     })
     screenshot_dir = context.storage.path("screenshots")
     screenshot_dir.mkdir(parents=True, exist_ok=True)

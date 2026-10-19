@@ -22,6 +22,8 @@ def normalize_domain(value: str) -> str:
         parsed = urlsplit(raw)
         if parsed.username or parsed.password or parsed.port:
             raise ValueError("target URLs must not contain credentials or ports")
+        if parsed.netloc.endswith(":"):
+            raise ValueError("target URLs must not contain an empty port")
         if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
             raise ValueError("expected a domain name without a path, query, or fragment")
         hostname = parsed.hostname or ""
@@ -81,6 +83,19 @@ class Scope:
         included = any(domain == root or domain.endswith(f".{root}") for root in self.include)
         excluded = any(domain == item or domain.endswith(f".{item}") for item in self.exclude)
         return included and not excluded
+
+    def allows_url(self, value: str) -> bool:
+        try:
+            parsed = urlsplit(value)
+            if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
+                return False
+            if parsed.username or parsed.password or parsed.netloc.endswith(":"):
+                return False
+            if parsed.port == 0:
+                return False
+        except ValueError:
+            return False
+        return self.allows(parsed.hostname)
 
     def filter(self, values: list[str] | set[str]) -> tuple[list[str], list[str]]:
         accepted: set[str] = set()

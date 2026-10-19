@@ -18,16 +18,21 @@ class HttpTests(unittest.TestCase):
             json.dumps({"url": "https://example.com/", "status_code": 200, "title": "Example"}),
             json.dumps({"url": "https://notexample.com/", "status_code": 200}),
             json.dumps({"url": "https://user:secret@example.com/", "status_code": 200}),
+            json.dumps({"url": "https://example.com:bad/", "status_code": 200}),
         ])
         with (
             patch("k_recon.modules.http.tool_available", return_value=True),
             patch("k_recon.modules.http.run_tool", return_value=ToolRun(payload)) as tool,
+            patch("k_recon.modules.http._native_probe", return_value=http.Service("https://example.com/", "example.com", 200, "Example")),
         ):
             result = http.run(context)
         self.assertEqual(tool.call_args.args[0], "httpx")
         args = tool.call_args.args[1]
         self.assertEqual(args[args.index("-allow") + 1], "8.8.8.8/32")
         self.assertEqual(result.details["live"], 1)
+        self.assertEqual(result.details["backend"], "httpx")
+        self.assertIn("out-of-scope", result.details["probe_warning"])
+        self.assertIsNone(result.details["backend_note"])
         self.assertEqual(context.data["live_urls"], ["https://example.com/"])
 
     def test_uses_pinned_probe_when_ips_are_not_explicitly_authorized_for_httpx(self):
@@ -41,7 +46,23 @@ class HttpTests(unittest.TestCase):
             result = http.run(context)
         available.assert_not_called()
         self.assertEqual(result.details["live"], 1)
+        self.assertEqual(result.details["backend"], "stdlib")
         self.assertEqual(result.state, "success")
+
+    def test_httpx_failure_is_reported_and_falls_back_to_pinned_probe(self):
+        context, temporary = make_context(".")
+        self.addCleanup(temporary.cleanup)
+        context.scope = Scope.create(["example.com"], include_ips=["8.8.8.8"])
+        context.data["dns_records"] = [{"host": "example.com", "safe_for_network_modules": True, "public_addresses": ["8.8.8.8"]}]
+        with (
+            patch("k_recon.modules.http.tool_available", return_value=True),
+            patch("k_recon.modules.http.run_tool", return_value=ToolRun(error="mock timeout")),
+            patch("k_recon.modules.http._native_probe", return_value=http.Service("https://example.com/", "example.com", 200, "Example")),
+        ):
+            result = http.run(context)
+        self.assertEqual(result.details["backend"], "stdlib")
+        self.assertEqual(result.details["backend_note"], "mock timeout")
+        self.assertEqual(result.state, "partial")
 
 
 if __name__ == "__main__":

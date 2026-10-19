@@ -33,9 +33,7 @@ def run(context: RunContext) -> ModuleResult:
         for line in result.output.splitlines():
             url = line.strip()
             try:
-                parsed = urlsplit(url)
-                hostname = parsed.hostname or ""
-                if parsed.scheme not in ("http", "https") or parsed.username or parsed.password or not context.scope.allows(hostname):
+                if not context.scope.allows_url(url):
                     rejected += 1
                     continue
                 accepted.add(url)

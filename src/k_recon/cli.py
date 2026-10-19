@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 
@@ -33,11 +34,11 @@ def _parser() -> argparse.ArgumentParser:
     scan.add_argument("--scope", type=Path, help="YAML scope allowlist; without it, the target domain is the scope root")
     scan.add_argument("--modules", default="discovery,dns,http,urls", help=f"comma-separated modules: {','.join(MODULES)}")
     scan.add_argument("--output", type=Path, default=Path("results"), help="output directory (default: results)")
-    scan.add_argument("--timeout", type=float, default=8.0, help="per-tool, DNS, and HTTP timeout in seconds")
+    scan.add_argument("--timeout", type=float, default=8.0, help="per-tool call, DNS query, and HTTP connection timeout in seconds")
     scan.add_argument("--workers", type=int, default=10, help="maximum concurrent DNS/HTTP requests (1-100)")
     scan.add_argument("--enable-nmap", action="store_true", help="explicitly enable all-port Nmap service scanning")
     scan.add_argument("--authorized", action="store_true", help="confirm that you have permission to assess this target")
-    scan.add_argument("--verbose", action="store_true", help="show debug-level progress output")
+    scan.add_argument("--verbose", action="store_true", help="show debug-level run settings")
 
     tools = commands.add_parser("tools", help="show optional external tool availability")
     tools.add_argument("--json", action="store_true", help="print machine-readable tool status")
@@ -66,8 +67,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.authorized:
         parser.error("scan requires --authorized; only assess systems you have permission to test")
-    if args.timeout <= 0:
-        parser.error("--timeout must be greater than zero")
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
+        parser.error("--timeout must be a finite number greater than zero")
     if not 1 <= args.workers <= 100:
         parser.error("--workers must be between 1 and 100")
 

@@ -30,6 +30,18 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(context.data["hosts"], ["example.com"])
         self.assertEqual(result.details["providers"]["amass"]["state"], "missing")
 
+    def test_successful_provider_keeps_module_success_with_missing_optional_providers(self):
+        context, temporary = make_context(".")
+        self.addCleanup(temporary.cleanup)
+
+        def one_provider(name, *_args):
+            return ToolRun("api.example.com\n") if name == "subfinder" else ToolRun(error=f"{name} missing", missing=True)
+
+        with patch("k_recon.modules.discovery.run_tool", side_effect=one_provider):
+            result = discovery.run(context)
+        self.assertEqual(result.state, "success")
+        self.assertEqual(result.details["providers"]["assetfinder"]["state"], "missing")
+
 
 if __name__ == "__main__":
     unittest.main()

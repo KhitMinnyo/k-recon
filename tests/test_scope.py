@@ -8,7 +8,7 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(normalize_domain("BÜCHER.Example."), "xn--bcher-kva.example")
 
     def test_rejects_ip_and_malformed_names(self):
-        for value in ("127.0.0.1", "example.com/path", "example.com:443", "localhost", "-bad.example"):
+        for value in ("127.0.0.1", "example.com/path", "example.com:443", "https://example.com:/", "localhost", "-bad.example"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 normalize_domain(value)
 
@@ -18,6 +18,20 @@ class ScopeTests(unittest.TestCase):
         self.assertTrue(scope.allows("api.example.com"))
         self.assertFalse(scope.allows("notexample.com"))
         self.assertFalse(scope.allows("example.com.attacker.test"))
+
+    def test_validates_url_scheme_credentials_port_and_scope(self):
+        scope = Scope.create(["example.com"])
+        self.assertTrue(scope.allows_url("https://api.example.com:8443/path"))
+        for value in (
+            "ftp://example.com/file",
+            "https://user:secret@example.com/",
+            "https://example.com:/",
+            "https://example.com:0/",
+            "https://example.com:99999/",
+            "https://notexample.com/",
+        ):
+            with self.subTest(value=value):
+                self.assertFalse(scope.allows_url(value))
 
     def test_exclusions_apply_to_nested_domains(self):
         scope = Scope.create(["example.com"], ["private.example.com"])

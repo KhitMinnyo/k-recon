@@ -1,4 +1,4 @@
-"""HTTP probing using httpx when available, with a standard-library fallback."""
+"""DNS-pinned HTTP probing with an explicitly allowlisted httpx adapter."""
 
 from __future__ import annotations
 
@@ -99,14 +99,16 @@ def _httpx_probe(context: RunContext, hosts: list[str]) -> tuple[list[Service], 
         return [], result.error
     services: list[Service] = []
     parse_errors = 0
+    rejected = 0
     for line in result.output.splitlines():
         try:
             item = json.loads(line)
             url = str(item.get("url", ""))
             parsed = urlsplit(url)
             host = parsed.hostname or ""
-            if parsed.scheme not in ("http", "https") or parsed.username or parsed.password or not context.scope.allows(host):
+            if not context.scope.allows_url(url):
                 context.logger.warning("Rejected out-of-scope httpx result: %s", url)
+                rejected += 1
                 continue
             services.append(Service(
                 url=url,
@@ -118,7 +120,12 @@ def _httpx_probe(context: RunContext, hosts: list[str]) -> tuple[list[Service], 
             ))
         except (json.JSONDecodeError, AttributeError, TypeError, ValueError):
             parse_errors += 1
-    return services, f"httpx returned {parse_errors} unparseable result line(s)" if parse_errors else None
+    warnings = []
+    if parse_errors:
+        warnings.append(f"httpx returned {parse_errors} unparseable result line(s)")
+    if rejected:
+        warnings.append(f"httpx returned {rejected} out-of-scope or invalid URL(s)")
+    return services, "; ".join(warnings) if warnings else None
 
 
 def run(context: RunContext) -> ModuleResult:
@@ -130,7 +137,9 @@ def run(context: RunContext) -> ModuleResult:
     }
     hosts = sorted(records_by_host)
     services: list[Service] = []
-    error: str | None = None
+    warning: str | None = None
+    backend = "not-run"
+    fallback_reason: str | None = None
     if hosts:
         # External httpx performs its own DNS lookups, so use it only when each
         # current DNS address has also been explicitly authorized in the scope.
@@ -139,14 +148,26 @@ def run(context: RunContext) -> ModuleResult:
             for addresses in (record.get("public_addresses", []) for record in records_by_host.values())
         )
         if explicitly_allowed and tool_available("httpx"):
-            candidate, error = _httpx_probe(context, hosts)
-            services = candidate
-        if not services:
-            context.logger.info("Using the built-in HTTP probe with DNS-pinned connections%s", f" ({error})" if error else "")
+            services, warning = _httpx_probe(context, hosts)
+            backend = "httpx"
+            completed_hosts = {service.host for service in services if service.status_code is not None}
+            fallback_hosts = [host for host in hosts if host not in completed_hosts] if warning else []
+            if fallback_hosts:
+                fallback_reason = warning
+        else:
+            fallback_reason = "httpx addresses are not explicitly allowlisted" if not explicitly_allowed else "compatible httpx binary is unavailable"
+            fallback_hosts = hosts
+
+        if fallback_hosts:
+            if backend == "httpx":
+                backend = "httpx+stdlib" if services else "stdlib"
+            else:
+                backend = "stdlib"
+            context.logger.info("Using the built-in HTTP probe with DNS-pinned connections%s", f" ({fallback_reason})" if fallback_reason else "")
             with concurrent.futures.ThreadPoolExecutor(max_workers=context.workers) as executor:
-                services = list(executor.map(
+                services.extend(executor.map(
                     lambda host: _native_probe(host, list(records_by_host[host]["public_addresses"]), context.timeout),
-                    hosts,
+                    fallback_hosts,
                 ))
 
     services = [service for service in services if context.scope.allows(service.host)]
@@ -157,5 +178,10 @@ def run(context: RunContext) -> ModuleResult:
     context.storage.write_json("http/services.json", context.data["services"])
     context.logger.info("HTTP probing found %d live service(s)", len(live))
     failed = sum(service.status_code is None for service in services)
-    state = "partial" if failed or error else "success"
-    return ModuleResult("http", state, "HTTP probing completed with failures" if state == "partial" else "HTTP probing completed", {"live": len(live), "failed": failed, "probe_warning": error})
+    state = "partial" if failed or warning else "success"
+    return ModuleResult(
+        "http",
+        state,
+        "HTTP probing completed with failures" if state == "partial" else "HTTP probing completed",
+        {"live": len(live), "failed": failed, "probe_warning": warning, "backend": backend, "backend_note": fallback_reason},
+    )

@@ -12,7 +12,7 @@
 - DNS-pinned HTTP probing through the standard library, with ProjectDiscovery httpx available when all current addresses are explicitly authorized.
 - Optional GoWitness screenshots and historical URL collection through Waybackurls and gau.
 - Nmap port and service scans only when explicitly enabled and IPs are separately allowlisted.
-- Per-run logs, atomic artifact writes, machine-readable JSON reports, and mocked tests.
+- Per-run logs, atomic framework-managed text/JSON writes, machine-readable reports, and mocked tests.
 
 External reconnaissance tools are optional. Missing tools are reported in the run results; unrelated modules continue when their dependencies are available. DNS resolution requires `dnspython`; YAML configuration uses PyYAML.
 
@@ -98,14 +98,14 @@ results/example.com/runs/<run-id>/
 │   └── alive.txt
 ├── dns/records.json
 ├── http/services.json
-├── screenshots/
-├── urls/
-├── scans/
+├── urls/                 # included by the default module set
 ├── logs/recon.log
 └── report.json
 ```
 
-The report records module state (`success`, `partial`, `failed`, or `skipped`), provider errors, and run timestamps. A missing optional tool produces a clear partial result instead of silently discarding the failure.
+`screenshots/` appears only when the `screenshots` module is selected. `scans/` appears only when `--enable-nmap` is used. DNS and HTTP artifacts are present when those modules run; dependencies are added automatically for selected downstream modules.
+
+The report records module state (`success`, `partial`, `failed`, or `skipped`), provider errors, the HTTP backend used, and run timestamps. Discovery and URL modules record missing providers individually; they are partial if no provider completes or any selected provider fails. Missing GoWitness produces a partial screenshot result. Unavailable httpx is reported as the built-in DNS-pinned fallback in the HTTP result. A requested Nmap run fails if Nmap cannot start. Framework-managed text and JSON files are written atomically; files produced directly by external tools are not.
 
 ## Safety Boundaries
 

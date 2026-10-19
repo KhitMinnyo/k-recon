@@ -14,7 +14,7 @@ from k_recon.models import ModuleResult, RunContext
 def _resolve(host: str, timeout: float) -> dict[str, object]:
     resolver = dns.resolver.Resolver(configure=True)
     resolver.timeout = timeout
-    resolver.lifetime = timeout * 2
+    resolver.lifetime = timeout
     addresses: set[str] = set()
     errors: list[str] = []
     for record_type in ("A", "AAAA"):

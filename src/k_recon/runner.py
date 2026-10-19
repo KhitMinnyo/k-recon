@@ -94,6 +94,7 @@ def run_scan(
     )
     logger.info("Starting run for %s", normalized_target)
     logger.info("Selected module plan: %s", ", ".join(plan))
+    logger.debug("Run settings: timeout=%s workers=%s nmap=%s", timeout, workers, enable_nmap)
 
     results: list[ModuleResult] = []
     states: dict[str, str] = {}
